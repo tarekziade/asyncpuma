@@ -16,9 +16,6 @@ require 'sinatra'
 require 'sinatra/config_file'
 require 'sinatra/json'
 
-Dir[File.join(__dir__, 'initializers/**/*.rb')].sort.each { |f| require f }
-
-
 
 # Sinatra app
 class ConnectorsWebApp < Sinatra::Base
@@ -31,7 +28,7 @@ class ConnectorsWebApp < Sinatra::Base
     set :bind, settings.http['host']
     set :port, settings.http['port']
     set :pool, Concurrent::ThreadPoolExecutor.new(min_threads: 3, max_threads: 10, max_queue: 0)
-    set :results, {}
+    set :results, Concurrent::Hash.new
   end
 
   def quit!
@@ -45,11 +42,10 @@ class ConnectorsWebApp < Sinatra::Base
   get '/start' do
     job_id = SecureRandom.uuid
 
-    # a pool of workers is nicer, for recycling
     settings.pool.post do
       puts("Running #{job_id} in a thread")
       settings.results[job_id] = {'status': "Not ready"}
-      sleep 30
+      sleep 5
       # XXX on error we set the status with an error
       settings.results[job_id] = {'status': 'finished', 'result': "Result for #{job_id}"}
     end
@@ -61,6 +57,17 @@ class ConnectorsWebApp < Sinatra::Base
   end
 
   get '/result/:job_id' do
-    json(settings.results[params[:job_id]])
+    job_id = params[:job_id]
+    if !settings.results.include?(job_id)
+      status 404
+      return json({"Not found": job_id})
+    end
+
+
+    result = settings.results[job_id]
+    if result[:status] == 'finished'
+      settings.results.delete(job_id)
+    end
+    json(result)
   end
 end
