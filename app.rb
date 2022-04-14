@@ -32,13 +32,17 @@ class ConnectorsWebApp < Sinatra::Base
     set :results, {}
   end
 
+  # when using Puma, this creates a new thread -- which is not required since
+  # we handle our own thread for the sync job, but does not hurt
   get '/start' do
     job_id = SecureRandom.uuid
 
+    # a pool of workers is nicer, for recycling
     Thread.new {
       puts("Running #{job_id} in a thread")
       settings.results[job_id] = {'status': "Not ready"}
       sleep 30
+      # XXX on error we set the status with an error
       settings.results[job_id] = {'status': 'finished', 'result': "Result for #{job_id}"}
     }
 
