@@ -10,6 +10,7 @@ require 'active_support/inflector'
 require 'faraday'
 require 'hashie'
 require 'json'
+require 'concurrent'
 
 require 'sinatra'
 require 'sinatra/config_file'
@@ -29,7 +30,14 @@ class ConnectorsWebApp < Sinatra::Base
     set :show_exceptions, false
     set :bind, settings.http['host']
     set :port, settings.http['port']
+    set :pool, Concurrent::ThreadPoolExecutor.new(min_threads: 3, max_threads: 10, max_queue: 0)
     set :results, {}
+  end
+
+  def quit!
+    settings.pool.shutdown
+    settings.pool.wait_for_termination
+    super
   end
 
   # when using Puma, this creates a new thread -- which is not required since
@@ -38,13 +46,13 @@ class ConnectorsWebApp < Sinatra::Base
     job_id = SecureRandom.uuid
 
     # a pool of workers is nicer, for recycling
-    Thread.new {
+    settings.pool.post do
       puts("Running #{job_id} in a thread")
       settings.results[job_id] = {'status': "Not ready"}
       sleep 30
       # XXX on error we set the status with an error
       settings.results[job_id] = {'status': 'finished', 'result': "Result for #{job_id}"}
-    }
+    end
 
     json(
       :job_id => job_id,
